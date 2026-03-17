@@ -20,7 +20,7 @@ def load_data():
 
 
 # -----------------------------
-# FIND COLUMN (robust)
+# FIND COLUMN (flexible)
 # -----------------------------
 def find_column(df, keywords):
     for col in df.columns:
@@ -33,6 +33,7 @@ def find_column(df, keywords):
 # -----------------------------
 # GET ADDRESSES
 # -----------------------------
+@st.cache_data
 def get_addresses():
     dfs = load_data()
     all_addresses = []
@@ -81,70 +82,69 @@ Details: {row.get(desc_col, "")}"""
 
 
 # -----------------------------
-# MAIN APP
+# UI
 # -----------------------------
 st.title("🛡️ Frontline Safety AI – Address Risk Assistant")
 
-st.markdown("Search across multiple datasets to generate a safety briefing.")
+st.markdown("Search multiple departmental datasets and generate a safety briefing.")
 
 addresses = get_addresses()
 
 selected_address = st.selectbox("Select Address", addresses)
 
-col1, col2 = st.columns(2)
 
 # -----------------------------
-# STEP 1 — SEARCH
+# SEARCH BUTTON
 # -----------------------------
-with col1:
-    if st.button("🔍 Search Incidents"):
+if st.button("🔍 Search Incidents"):
 
-        dfs = load_data()
+    dfs = load_data()
 
-        all_incidents = []
-        for df in dfs:
-            all_incidents += extract_incidents(df, selected_address)
+    all_incidents = []
+    for df in dfs:
+        all_incidents += extract_incidents(df, selected_address)
 
-        if not all_incidents:
-            st.warning("No incidents found.")
+    if not all_incidents:
+        st.warning("No incidents found.")
+    else:
+        st.session_state["incidents"] = all_incidents
+
+        st.subheader("Incident Data")
+        st.text("\n\n".join(all_incidents))
+
+        # Risk scoring
+        count = len(all_incidents)
+        if count >= 6:
+            risk = "HIGH"
+        elif count >= 3:
+            risk = "MEDIUM"
         else:
-            st.session_state["incidents"] = all_incidents
+            risk = "LOW"
 
-            st.subheader("Incident Data")
-            st.text("\n\n".join(all_incidents))
+        st.session_state["risk"] = risk
 
-            # simple risk score
-            count = len(all_incidents)
-            if count >= 6:
-                risk = "HIGH"
-            elif count >= 3:
-                risk = "MEDIUM"
-            else:
-                risk = "LOW"
-
-            st.session_state["risk"] = risk
 
 # -----------------------------
-# STEP 2 — AI SUMMARY
+# AI BUTTON
 # -----------------------------
-with col2:
-    if st.button("🤖 Generate AI Briefing"):
+if st.button("🤖 Generate AI Briefing"):
 
-        incidents = st.session_state.get("incidents", [])
-        risk = st.session_state.get("risk", "LOW")
+    incidents = st.session_state.get("incidents", [])
+    risk = st.session_state.get("risk", "LOW")
 
-        if not incidents:
-            st.warning("Run search first.")
-        else:
-            incident_text = "\n\n".join(incidents)
+    if not incidents:
+        st.warning("Run search first.")
+    else:
 
-            prompt = f"""
-Generate:
+        incident_text = "\n\n".join(incidents)
+
+        prompt = f"""
+Generate EXACTLY this format:
 
 RISK LEVEL: {risk}
 
 Key Risks
-Summarise risks.
+Summarise key risks.
 
 Recommendation
 Provide safety advice.
@@ -153,21 +153,12 @@ Incidents:
 {incident_text}
 """
 
-            try:
-                response = requests.post(API_URL, json={"inputs": prompt}, timeout=10)
+        try:
+            response = requests.post(API_URL, json={"inputs": prompt}, timeout=10)
 
-                if response.status_code == 200:
-                    ai_text = response.json()[0]["generated_text"]
-                else:
-                    ai_text = f"""RISK LEVEL: {risk}
-
-Key Risks
-Multiple incidents recorded.
-
-Recommendation
-Proceed with caution."""
-
-            except:
+            if response.status_code == 200:
+                ai_text = response.json()[0]["generated_text"]
+            else:
                 ai_text = f"""RISK LEVEL: {risk}
 
 Key Risks
@@ -176,5 +167,14 @@ Multiple incidents recorded.
 Recommendation
 Proceed with caution."""
 
-            st.subheader("AI Risk Briefing")
-            st.text(f"{ai_text}\n\n{incident_text}")
+        except:
+            ai_text = f"""RISK LEVEL: {risk}
+
+Key Risks
+Multiple incidents recorded.
+
+Recommendation
+Proceed with caution."""
+
+        st.subheader("AI Risk Briefing")
+        st.text(f"{ai_text}\n\n{incident_text}")
